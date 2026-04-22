@@ -1,0 +1,10 @@
+node_modules
+.next
+.turbo
+dist
+coverage
+.git
+.cursor
+*.log
+apps/*/.next
+apps/*/dist
