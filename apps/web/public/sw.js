@@ -35,7 +35,14 @@ self.addEventListener("fetch", (event) => {
 
   // Never cache cross-origin requests.
   if (!isSameOrigin) {
-    event.respondWith(fetch(event.request));
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return new Response(JSON.stringify({ error: "NETWORK_ERROR" }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" }
+        });
+      })
+    );
     return;
   }
 
@@ -44,13 +51,17 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
-        return fetch(event.request).then((response) => {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone).catch(() => {});
+        return fetch(event.request)
+          .then((response) => {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone).catch(() => {});
+            });
+            return response;
+          })
+          .catch(() => {
+            return new Response("Service unavailable", { status: 503 });
           });
-          return response;
-        });
       })
     );
     return;

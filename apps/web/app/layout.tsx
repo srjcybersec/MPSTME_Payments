@@ -14,6 +14,9 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "MPSTME Canteen"
+  },
+  other: {
+    "mobile-web-app-capable": "yes"
   }
 };
 
