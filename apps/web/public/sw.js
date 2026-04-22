@@ -1,4 +1,4 @@
-const CACHE_NAME = "mpstme-web-v1";
+const CACHE_NAME = "mpstme-web-v2";
 const STATIC_ASSETS = ["/", "/manifest.webmanifest", "/mpstme-logo.png"];
 
 self.addEventListener("install", (event) => {
@@ -28,21 +28,61 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+  const isCoreStatic = isSameOrigin && STATIC_ASSETS.includes(url.pathname);
+  const isNextBundle = isSameOrigin && url.pathname.startsWith("/_next/");
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
+  // Never cache cross-origin requests.
+  if (!isSameOrigin) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Cache-first for tiny static shell assets only.
+  if (isCoreStatic) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone).catch(() => {});
+          });
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Network-first for app bundles and pages to avoid stale JS/env.
+  if (isNextBundle || event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
         .then((response) => {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone).catch(() => {
-              // Ignore opaque or non-cacheable responses.
-            });
+            cache.put(event.request, responseClone).catch(() => {});
           });
           return response;
         })
-        .catch(() => caches.match("/"));
-    })
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/")))
+    );
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        const responseClone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseClone).catch(() => {});
+        });
+        return response;
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cached) => cached || caches.match("/"));
+      })
   );
 });
