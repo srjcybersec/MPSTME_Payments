@@ -1,0 +1,224 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  VENDOR
+}
+
+enum WalletTransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum WalletTransactionSource {
+  RAZORPAY
+  WALLET_SYNC
+  REFUND
+  MANUAL
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  COLLECTED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  WALLET
+  RAZORPAY
+}
+
+enum OfflineSyncStatus {
+  PENDING
+  PROCESSED
+  FAILED
+  REJECTED
+}
+
+model User {
+  id                 String      @id @default(cuid())
+  name               String
+  email              String      @unique
+  phoneNumber        String      @unique
+  studentId          String?     @unique
+  passwordHash       String
+  role               UserRole
+  isEmailVerified    Boolean     @default(false)
+  isPhoneVerified    Boolean     @default(false)
+  isFrozen           Boolean     @default(false)
+  deviceId           String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  deletedAt          DateTime?
+  wallet             Wallet?
+  orders             Order[]
+  offlineSyncEntries OfflineSyncQueue[]
+  sessions           Session[]
+}
+
+model Wallet {
+  id                      String              @id @default(cuid())
+  userId                  String              @unique
+  balancePaise            Int                 @default(0)
+  dailyOfflineSpendPaise  Int                 @default(0)
+  dailyOfflineSpendResetAt DateTime           @default(now())
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  user                    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions            WalletTransaction[]
+
+  @@index([userId])
+}
+
+model WalletTransaction {
+  id          String                  @id @default(cuid())
+  walletId    String
+  type        WalletTransactionType
+  amountPaise Int
+  description String
+  referenceId String?
+  source      WalletTransactionSource
+  createdAt   DateTime                @default(now())
+  wallet      Wallet                  @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  sortOrder Int        @default(0)
+  isActive  Boolean    @default(true)
+  items     MenuItem[]
+}
+
+model MenuItem {
+  id                     String    @id @default(cuid())
+  categoryId             String
+  name                   String
+  description            String
+  pricePaise             Int
+  imageUrl               String?
+  isAvailable            Boolean   @default(true)
+  currentStock           Int       @default(0)
+  lowStockThreshold      Int       @default(10)
+  preparationTimeMinutes Int       @default(10)
+  isVeg                  Boolean   @default(true)
+  tags                   String[]
+  sortOrder              Int       @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  deletedAt              DateTime?
+  category               Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  orderItems             OrderItem[]
+
+  @@index([categoryId, isAvailable])
+}
+
+model Order {
+  id               String        @id @default(cuid())
+  studentId        String
+  status           OrderStatus   @default(PENDING)
+  paymentMethod    PaymentMethod
+  totalAmountPaise Int
+  orderNotes       String?
+  targetPickupTime DateTime?
+  confirmedAt      DateTime?
+  readyAt          DateTime?
+  collectedAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  student          User          @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  items            OrderItem[]
+  receipt          Receipt?
+
+  @@index([studentId, status])
+  @@index([status, createdAt])
+}
+
+model OrderItem {
+  id             String   @id @default(cuid())
+  orderId        String
+  menuItemId     String
+  quantity       Int
+  unitPricePaise Int
+  subtotalPaise  Int
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem       MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+}
+
+model OfflineSyncQueue {
+  id            String            @id @default(cuid())
+  studentId     String
+  deviceId      String
+  nonce         String            @unique
+  localOrderId  String
+  payload       Json
+  status        OfflineSyncStatus @default(PENDING)
+  processedAt   DateTime?
+  failureReason String?
+  createdAt     DateTime          @default(now())
+  student       User              @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@index([studentId, status, createdAt])
+}
+
+model Receipt {
+  id            String   @id @default(cuid())
+  orderId        String   @unique
+  qrCodeData     String
+  receiptPdfUrl  String?
+  createdAt      DateTime @default(now())
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model WebhookEvent {
+  id         String   @id @default(cuid())
+  provider   String
+  eventId    String   @unique
+  eventType  String
+  payload    Json
+  processedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([provider, eventType, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorRole String
+  action    String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt DateTime @default(now())
+
+  @@index([targetType, targetId, createdAt])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
